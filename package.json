@@ -37,6 +37,7 @@
 		"node": ">=18"
 	},
 	"scripts": {
-		"test": "node test/ssh-image-clipboard.test.mjs"
+		"test": "node test/ssh-image-clipboard.test.mjs",
+		"prepublishOnly": "npm test"
 	}
 }

@@ -1,5 +1,5 @@
 /**
- * remote-image-paste: make Ctrl+V image paste work over ssh/et from client
+ * pi-ssh-image-clipboard: make Ctrl+V image paste work over ssh/et from client
  * machines (e.g. Macs), including multiple boxen attached to the same tmux.
  *
  * Transport: each client box serves its clipboard as PNG on its local
@@ -19,7 +19,7 @@
  *      and are only reachable via their by-tty symlink)
  *   3. legacy single socket ~/.pi-clip.sock, then TCP 127.0.0.1:7779
  *
- * See remote-image-paste.mac-setup.md next to this file for client setup.
+ * See README.md in the package root for client setup.
  *
  * Registers only on headless Linux (no DISPLAY/WAYLAND_DISPLAY), where pi's
  * built-in image paste is a guaranteed no-op anyway — so local/desktop pi
