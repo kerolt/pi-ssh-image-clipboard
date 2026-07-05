@@ -78,6 +78,8 @@ sudo sshd -t && sudo systemctl reload ssh
 Any OS works if it serves its clipboard as an image on a local socket;
 instructions below are for macOS.
 
+Replace `pasky` below with your username, of course.
+
 ```bash
 brew install pngpaste
 ```
