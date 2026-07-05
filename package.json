@@ -1,0 +1,42 @@
+{
+	"name": "pi-ssh-image-clipboard",
+	"version": "1.0.0",
+	"description": "Pi extension: Ctrl+V image paste into remote pi sessions over ssh/Eternal Terminal reverse tunnels, multi-client-box aware via tmux.",
+	"license": "MIT",
+	"author": "Petr Baudis",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/pasky/pi-ssh-image-clipboard.git"
+	},
+	"homepage": "https://github.com/pasky/pi-ssh-image-clipboard#readme",
+	"bugs": "https://github.com/pasky/pi-ssh-image-clipboard/issues",
+	"type": "module",
+	"keywords": [
+		"pi-package",
+		"pi",
+		"pi-coding-agent",
+		"extension",
+		"clipboard",
+		"ssh",
+		"eternal-terminal",
+		"tmux"
+	],
+	"files": [
+		"extensions/ssh-image-clipboard.ts",
+		"README.md"
+	],
+	"pi": {
+		"extensions": [
+			"./extensions/ssh-image-clipboard.ts"
+		]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "^0.80.0"
+	},
+	"engines": {
+		"node": ">=18"
+	},
+	"scripts": {
+		"test": "node test/ssh-image-clipboard.test.mjs"
+	}
+}
