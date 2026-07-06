@@ -199,6 +199,27 @@ socket), `PI_REMOTE_CLIP_PORT`.
   users cannot read your client clipboard (et's socket dir is 0700; keep
   `~/.pi-clip` at 0700).
 
+## Silencing the startup shortcut-conflict warning
+
+Because the extension registers `Ctrl+V`, which pi ships bound to the built-in
+`app.clipboard.pasteImage`, pi prints a diagnostic on every startup:
+
+```
+Extension shortcut conflict: 'ctrl+v' is built-in shortcut for
+app.clipboard.pasteImage and .../ssh-image-clipboard.ts. Using .../ssh-image-clipboard.ts.
+```
+
+The extension still wins ("Using .../ssh-image-clipboard.ts"), so this is
+harmless — but noisy. On a headless box the built-in paste is a no-op anyway,
+so just unbind it in the remote box's `~/.pi/agent/keybindings.json` to make
+the conflict (and the warning) disappear:
+
+```json
+{
+	"app.clipboard.pasteImage": []
+}
+```
+
 ## Tests
 
 ```bash
