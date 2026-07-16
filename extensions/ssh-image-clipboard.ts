@@ -121,6 +121,48 @@ function sniffImageExt(data: Buffer): string | null {
 	return null;
 }
 
+/**
+ * Strip a PNG gAMA chunk that stores a *decoding* gamma (>1.0) instead of the
+ * encoding gamma (~0.45455 for sRGB-like content). Our very own pngpaste is a
+ * culprit: it always re-encodes the pasteboard bitmap through AppKit/ImageIO
+ * (never dumps the raw public.png flavor), and that path can emit
+ * gAMA = 219998 — exactly round(100000/0.45455), a correct value inverted
+ * once too often. Gamma-aware viewers then dutifully "correct" for it,
+ * washing the image out (same failure mode as
+ * https://news.ycombinator.com/item?id=46403048). We strip on gamma > 1.0
+ * rather than matching 219998 exactly: the same inversion applied to other
+ * source colorspaces yields other values (all > 1.0), while values > 1.0 are
+ * spec-legal but not emitted by any real encoder. Pixel data is untouched; we
+ * only splice the bogus metadata chunk out. The chunk walk must reach IEND
+ * cleanly before we touch anything, so non-PNG or structurally broken input
+ * is returned as-is (CRCs are not verified — splicing a whole chunk cannot
+ * invalidate the others').
+ */
+export function sanitizePng(data: Buffer): Buffer {
+	if (sniffImageExt(data) !== "png") return data;
+	let gamaStart = -1;
+	let gamaEnd = -1;
+	let sawIend = false;
+	let off = 8; // skip signature
+	while (off + 12 <= data.length) {
+		const len = data.readUInt32BE(off);
+		const type = data.subarray(off + 4, off + 8).toString("latin1");
+		const end = off + 12 + len; // length + type + data + crc
+		if (end > data.length) return data; // chunk overruns buffer: malformed
+		if (gamaStart < 0 && type === "gAMA" && len === 4 && data.readUInt32BE(off + 8) > 100000) {
+			gamaStart = off;
+			gamaEnd = end;
+		}
+		off = end;
+		if (type === "IEND") {
+			sawIend = true;
+			break;
+		}
+	}
+	if (!sawIend || gamaStart < 0) return data; // no clean walk to IEND, or nothing to fix
+	return Buffer.concat([data.subarray(0, gamaStart), data.subarray(gamaEnd)]);
+}
+
 export default function (pi: ExtensionAPI) {
 	if (process.platform !== "linux" || process.env.DISPLAY || process.env.WAYLAND_DISPLAY) {
 		return; // built-in image paste can work here; don't shadow it
@@ -140,7 +182,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				const file = path.join(os.tmpdir(), `pi-clipboard-${crypto.randomUUID()}.${ext}`);
-				fs.writeFileSync(file, data);
+				fs.writeFileSync(file, sanitizePng(data));
 				ctx.ui.pasteToEditor(file);
 				return;
 			}

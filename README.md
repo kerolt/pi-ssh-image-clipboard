@@ -195,6 +195,17 @@ socket), `PI_REMOTE_CLIP_PORT`.
 - Empty clipboard: pngpaste exits non-zero writing an error to stderr; the
   plist's `StandardErrorPath` keeps that text off the socket so the
   extension sees a clean empty read.
+- Bogus PNG gamma: pngpaste always re-encodes the pasteboard bitmap through
+  AppKit/ImageIO (it never dumps the pasteboard's raw `public.png` flavor),
+  and that path can emit a `gAMA` chunk with the *decoding* gamma
+  (219998 = 1/0.45455) instead of the encoding gamma (≈45455 = 1/2.2).
+  Gamma-aware viewers then "correct" for the inverted value and wash the
+  image out — same failure mode as
+  [this HN case](https://news.ycombinator.com/item?id=46403048). An encoding
+  gamma > 1.0 is spec-legal but in practice always a writer bug (no real
+  encoder emits one), so the extension splices such chunks out of pasted
+  PNGs (pixel data untouched; sane `gAMA` values are kept; structurally
+  broken PNGs are passed through unmodified).
 - Multi-user remote boxes: unix sockets are used precisely so other local
   users cannot read your client clipboard (et's socket dir is 0700; keep
   `~/.pi-clip` at 0700).

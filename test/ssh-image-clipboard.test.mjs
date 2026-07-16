@@ -50,9 +50,42 @@ if (!process.env.__SIC_TEST_CHILD && !(await canImportTs())) {
 
 // --- fixture -----------------------------------------------------------------
 
-const extension = (await import(EXT_PATH)).default;
+const extMod = await import(EXT_PATH);
+const extension = extMod.default;
+const { sanitizePng } = extMod;
 
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(24, 7)]);
+
+const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+/** PNG chunk with dummy CRC (sanitizePng doesn't verify CRCs). */
+function pngChunk(type, data) {
+	const len = Buffer.alloc(4);
+	len.writeUInt32BE(data.length);
+	return Buffer.concat([len, Buffer.from(type, "latin1"), data, Buffer.alloc(4)]);
+}
+function gamaChunk(value) {
+	const d = Buffer.alloc(4);
+	d.writeUInt32BE(value);
+	return pngChunk("gAMA", d);
+}
+function pngWith(...chunks) {
+	return Buffer.concat([
+		PNG_SIG,
+		pngChunk("IHDR", Buffer.alloc(13)),
+		...chunks,
+		pngChunk("IDAT", Buffer.alloc(10, 7)),
+		pngChunk("IEND", Buffer.alloc(0)),
+	]);
+}
+function pngChunkTypes(buf) {
+	const types = [];
+	for (let off = 8; off + 12 <= buf.length; ) {
+		const len = buf.readUInt32BE(off);
+		types.push(buf.subarray(off + 4, off + 8).toString("latin1"));
+		off += 12 + len;
+	}
+	return types;
+}
 
 function loadHandler() {
 	const shortcuts = [];
@@ -93,6 +126,34 @@ function cleanDir() {
 }
 
 // --- tests -------------------------------------------------------------------
+
+test("sanitizePng strips inverted gAMA (gamma > 1) and nothing else", () => {
+	const bogus = pngWith(gamaChunk(219998));
+	const fixed = sanitizePng(bogus);
+	assert.deepEqual(pngChunkTypes(fixed), ["IHDR", "IDAT", "IEND"]);
+	assert.deepEqual(sanitizePng(fixed), fixed); // idempotent
+	// IDAT bytes untouched
+	assert.ok(fixed.includes(Buffer.alloc(10, 7)));
+});
+
+test("sanitizePng keeps a correct encoding gAMA (~0.45455)", () => {
+	const ok = pngWith(gamaChunk(45455));
+	assert.deepEqual(sanitizePng(ok), ok);
+});
+
+test("sanitizePng leaves non-PNG and malformed data untouched", () => {
+	const jpg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0]);
+	assert.deepEqual(sanitizePng(jpg), jpg);
+	const truncated = pngWith(gamaChunk(219998)).subarray(0, 30); // cut mid-IHDR
+	assert.deepEqual(sanitizePng(truncated), truncated);
+	// bogus gAMA is present and parseable, but the stream never reaches IEND:
+	// must stay untouched (no splicing of structurally broken PNGs)
+	const full = pngWith(gamaChunk(219998));
+	const midIdat = full.subarray(0, full.length - 20); // cut inside IDAT
+	assert.deepEqual(sanitizePng(midIdat), midIdat);
+	const noIend = full.subarray(0, full.length - 12); // IEND chunk missing entirely
+	assert.deepEqual(sanitizePng(noIend), noIend);
+});
 
 test("does not register when a display is present", () => {
 	process.env.DISPLAY = ":0";
@@ -157,6 +218,20 @@ if (process.platform === "linux") {
 			await closeServer(srv);
 			cleanDir();
 			fs.rmSync(etDir, { recursive: true, force: true });
+		}
+	});
+
+	test("pasted file has bogus gAMA stripped", async () => {
+		const srv = await listenUnix(path.join(CLIP_DIR, "boxa.sock"), pngWith(gamaChunk(219998)));
+		try {
+			const { events, ctx } = makeCtx();
+			await loadHandler()[0].opts.handler(ctx);
+			assert.match(events.pasted ?? "", /pi-clipboard-.*\.png$/);
+			assert.ok(!fs.readFileSync(events.pasted).includes(Buffer.from("gAMA", "latin1")));
+			fs.unlinkSync(events.pasted);
+		} finally {
+			await closeServer(srv);
+			cleanDir();
 		}
 	});
 
