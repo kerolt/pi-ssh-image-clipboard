@@ -1,0 +1,10 @@
+# 追加到 ~/.ssh/config，每台远端机器一段。
+# RemoteForward 把远端机器的 127.0.0.1:7779 接到 Mac 的 127.0.0.1:7779。
+
+Host REMOTE_HOST
+	HostName REMOTE_HOST
+	User REMOTE_USER
+	# 远端 ssh 端口不是 22 时改成实际端口
+	Port 22
+	# pi-ssh-image-clipboard:REMOTE_HOST
+	RemoteForward 127.0.0.1:7779 127.0.0.1:7779

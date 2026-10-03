@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>clipserve</string>
+	<key>ProgramArguments</key>
+	<array>
+		<!-- Intel Mac 上 pngpaste 位于 /usr/local/bin/pngpaste -->
+		<string>/opt/homebrew/bin/pngpaste</string>
+		<string>-</string>
+	</array>
+	<key>inetdCompatibility</key>
+	<dict><key>Wait</key><false/></dict>
+	<!-- pngpaste 的报错信息写到这里，避免混进 socket 输出 -->
+	<key>StandardErrorPath</key>
+	<string>/tmp/pngpaste-clipserve.err</string>
+	<key>Sockets</key>
+	<dict>
+		<!-- TCP 监听端口，供 ssh RemoteForward 使用 -->
+		<key>ListenerTCP</key>
+		<dict>
+			<key>SockNodeName</key>
+			<string>127.0.0.1</string>
+			<key>SockServiceName</key>
+			<string>7779</string>
+		</dict>
+		<!-- 使用 Eternal Terminal 时再加 Unix socket 监听，路径为 /Users/USERNAME/.clipserve.sock
+		<key>ListenerUnix</key>
+		<dict>
+			<key>SockPathName</key>
+			<string>/Users/USERNAME/.clipserve.sock</string>
+		</dict>
+		-->
+	</dict>
+</dict>
+</plist>

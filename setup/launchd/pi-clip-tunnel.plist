@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- 每台远端机器一份，把 HOST_TAG 换成机器名 -->
+	<key>Label</key>
+	<string>pi-clip-tunnel-HOST_TAG</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/bin/ssh</string>
+		<!-- 不复用 ControlMaster，避免已有 ssh 会话的状态影响这条隧道 -->
+		<string>-S</string>
+		<string>none</string>
+		<string>-NT</string>
+		<!-- 非交互模式，依赖 ssh key 免密登录 -->
+		<string>-o</string>
+		<string>BatchMode=yes</string>
+		<!-- 转发失败立即退出，由 launchd 按 ThrottleInterval 重试 -->
+		<string>-o</string>
+		<string>ExitOnForwardFailure=yes</string>
+		<string>-o</string>
+		<string>ServerAliveInterval=30</string>
+		<string>-o</string>
+		<string>ServerAliveCountMax=3</string>
+		<string>-o</string>
+		<string>ConnectTimeout=10</string>
+		<!-- ssh config 中的主机别名 -->
+		<string>REMOTE_HOST</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>StandardOutPath</key>
+	<string>/Users/USERNAME/Library/Logs/pi-clip-tunnel-HOST_TAG.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/USERNAME/Library/Logs/pi-clip-tunnel-HOST_TAG.error.log</string>
+</dict>
+</plist>
