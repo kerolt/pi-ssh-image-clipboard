@@ -234,5 +234,5 @@ the conflict (and the warning) disappear:
 ## Tests
 
 ```bash
-node test/ssh-image-clipboard.test.mjs
+node test/ssh-image-clipboard.test.ts
 ```

@@ -2,13 +2,12 @@
  * Headless tests for the ssh-image-clipboard extension.
  *
  * The extension has only a type-only import from pi, so it loads fine with
- * node's TypeScript type stripping. On node < 23 that needs a flag, so this
- * test re-execs itself with --experimental-strip-types when necessary.
+ * node's built-in TypeScript type stripping. That needs node >= 23.6; older
+ * versions load .ts files with --experimental-strip-types.
  *
- * Run:  node test/ssh-image-clipboard.test.mjs
+ * Run:  node test/ssh-image-clipboard.test.ts
  */
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -16,7 +15,29 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
+type TestContext = {
+	ui: {
+		notify: (message: string, type?: "info" | "warning" | "error") => void;
+		pasteToEditor: (text: string) => void;
+	};
+};
+
+type ShortcutOptions = {
+	description?: string;
+	handler: (ctx: TestContext) => Promise<void> | void;
+};
+
+type Shortcut = { key: string; opts: ShortcutOptions };
+
+type Events = { notified: string | null; pasted: string | null };
+
+type ExtensionModule = {
+	default: (pi: { registerShortcut: (key: string, options: ShortcutOptions) => void }) => void;
+	sanitizePng: (data: Buffer) => Buffer;
+};
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+
 const EXT_PATH = path.join(HERE, "..", "extensions", "ssh-image-clipboard.ts");
 
 // --- fixture env: MUST be set before the extension module is imported anywhere
@@ -31,44 +52,32 @@ delete process.env.DISPLAY;
 delete process.env.WAYLAND_DISPLAY;
 delete process.env.TMUX; // force fallback scan; tmux-dependent path needs a live tmux
 
-// --- self re-exec with type stripping if needed -----------------------------
-async function canImportTs() {
-	try {
-		await import(EXT_PATH);
-		return true;
-	} catch (err) {
-		return err?.code !== "ERR_UNKNOWN_FILE_EXTENSION" && err?.code !== "ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING";
-	}
-}
-if (!process.env.__SIC_TEST_CHILD && !(await canImportTs())) {
-	const r = spawnSync(process.execPath, ["--experimental-strip-types", fileURLToPath(import.meta.url)], {
-		stdio: "inherit",
-		env: { ...process.env, __SIC_TEST_CHILD: "1" },
-	});
-	process.exit(r.status ?? 1);
-}
-
 // --- fixture -----------------------------------------------------------------
 
-const extMod = await import(EXT_PATH);
+const extMod = (await import(EXT_PATH)) as ExtensionModule;
+
 const extension = extMod.default;
+
 const { sanitizePng } = extMod;
 
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(24, 7)]);
 
 const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
 /** PNG chunk with dummy CRC (sanitizePng doesn't verify CRCs). */
-function pngChunk(type, data) {
+function pngChunk(type: string, data: Buffer): Buffer {
 	const len = Buffer.alloc(4);
 	len.writeUInt32BE(data.length);
 	return Buffer.concat([len, Buffer.from(type, "latin1"), data, Buffer.alloc(4)]);
 }
-function gamaChunk(value) {
+
+function gamaChunk(value: number): Buffer {
 	const d = Buffer.alloc(4);
 	d.writeUInt32BE(value);
 	return pngChunk("gAMA", d);
 }
-function pngWith(...chunks) {
+
+function pngWith(...chunks: Buffer[]): Buffer {
 	return Buffer.concat([
 		PNG_SIG,
 		pngChunk("IHDR", Buffer.alloc(13)),
@@ -77,8 +86,9 @@ function pngWith(...chunks) {
 		pngChunk("IEND", Buffer.alloc(0)),
 	]);
 }
-function pngChunkTypes(buf) {
-	const types = [];
+
+function pngChunkTypes(buf: Buffer): string[] {
+	const types: string[] = [];
 	for (let off = 8; off + 12 <= buf.length; ) {
 		const len = buf.readUInt32BE(off);
 		types.push(buf.subarray(off + 4, off + 8).toString("latin1"));
@@ -87,14 +97,14 @@ function pngChunkTypes(buf) {
 	return types;
 }
 
-function loadHandler() {
-	const shortcuts = [];
+function loadHandler(): Shortcut[] {
+	const shortcuts: Shortcut[] = [];
 	extension({ registerShortcut: (key, opts) => shortcuts.push({ key, opts }) });
 	return shortcuts;
 }
 
-function makeCtx() {
-	const events = { notified: null, pasted: null };
+function makeCtx(): { events: Events; ctx: TestContext } {
+	const events: Events = { notified: null, pasted: null };
 	return {
 		events,
 		ctx: {
@@ -106,16 +116,16 @@ function makeCtx() {
 	};
 }
 
-function listenUnix(sockPath, payload) {
+function listenUnix(sockPath: string, payload: Buffer): Promise<net.Server> {
 	const srv = net.createServer((s) => s.end(payload));
 	return new Promise((resolve) => srv.listen(sockPath, () => resolve(srv)));
 }
 
-function closeServer(srv) {
-	return new Promise((resolve) => srv.close(resolve));
+function closeServer(srv: net.Server): Promise<void> {
+	return new Promise((resolve) => srv.close(() => resolve()));
 }
 
-function cleanDir() {
+function cleanDir(): void {
 	for (const sub of ["", "by-tty"]) {
 		const dir = path.join(CLIP_DIR, sub);
 		for (const f of fs.readdirSync(dir)) {
@@ -123,6 +133,12 @@ function cleanDir() {
 			if (!fs.lstatSync(p).isDirectory()) fs.unlinkSync(p);
 		}
 	}
+}
+
+/** Path the handler pasted, failing the test when it pasted nothing. */
+function pastedPath(events: Events): string {
+	assert.ok(events.pasted, "expected the handler to paste a file path");
+	return events.pasted;
 }
 
 // --- tests -------------------------------------------------------------------
@@ -177,9 +193,10 @@ if (process.platform === "linux") {
 			const { events, ctx } = makeCtx();
 			await loadHandler()[0].opts.handler(ctx);
 			assert.equal(events.notified, null);
-			assert.match(events.pasted, /pi-clipboard-.*\.png$/);
-			assert.deepEqual([...fs.readFileSync(events.pasted).subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
-			fs.unlinkSync(events.pasted);
+			const file = pastedPath(events);
+			assert.match(file, /pi-clipboard-.*\.png$/);
+			assert.deepEqual([...fs.readFileSync(file).subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
+			fs.unlinkSync(file);
 		} finally {
 			await closeServer(srv);
 			cleanDir();
@@ -196,8 +213,9 @@ if (process.platform === "linux") {
 			fs.utimesSync(stale, future, future);
 			const { events, ctx } = makeCtx();
 			await loadHandler()[0].opts.handler(ctx);
-			assert.match(events.pasted ?? "", /pi-clipboard-/);
-			fs.unlinkSync(events.pasted);
+			const file = pastedPath(events);
+			assert.match(file, /pi-clipboard-/);
+			fs.unlinkSync(file);
 		} finally {
 			await closeServer(srv);
 			cleanDir();
@@ -212,8 +230,9 @@ if (process.platform === "linux") {
 			fs.symlinkSync(path.join(etDir, "gone"), path.join(CLIP_DIR, "by-tty", "6.sock")); // dangling
 			const { events, ctx } = makeCtx();
 			await loadHandler()[0].opts.handler(ctx);
-			assert.match(events.pasted ?? "", /pi-clipboard-/);
-			fs.unlinkSync(events.pasted);
+			const file = pastedPath(events);
+			assert.match(file, /pi-clipboard-/);
+			fs.unlinkSync(file);
 		} finally {
 			await closeServer(srv);
 			cleanDir();
@@ -226,9 +245,10 @@ if (process.platform === "linux") {
 		try {
 			const { events, ctx } = makeCtx();
 			await loadHandler()[0].opts.handler(ctx);
-			assert.match(events.pasted ?? "", /pi-clipboard-.*\.png$/);
-			assert.ok(!fs.readFileSync(events.pasted).includes(Buffer.from("gAMA", "latin1")));
-			fs.unlinkSync(events.pasted);
+			const file = pastedPath(events);
+			assert.match(file, /pi-clipboard-.*\.png$/);
+			assert.ok(!fs.readFileSync(file).includes(Buffer.from("gAMA", "latin1")));
+			fs.unlinkSync(file);
 		} finally {
 			await closeServer(srv);
 			cleanDir();
