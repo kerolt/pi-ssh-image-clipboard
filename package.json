@@ -39,5 +39,8 @@
 	"scripts": {
 		"test": "node test/ssh-image-clipboard.test.mjs",
 		"prepublishOnly": "npm test"
+	},
+	"devDependencies": {
+		"@types/node": "^24.19.1"
 	}
 }
